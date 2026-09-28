@@ -733,6 +733,7 @@ export class Simulation {
         surfaceTension,
         vorticity,
         adhesion,
+        sortByCell: true,
       });
       for (const range of solidRanges) fluid.addBoundary(range);
       handle.system = fluid;
@@ -756,6 +757,7 @@ export class Simulation {
         range: airRange!,
         viscosity: 0.02,
         vorticity: 0.06,
+        sortByCell: true,
       });
       const height = container!.max.y - container!.min.y;
       const gas = new GasSystem(air, {

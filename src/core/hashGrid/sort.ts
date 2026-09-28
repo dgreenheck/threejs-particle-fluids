@@ -36,42 +36,35 @@ export function padToScanWorkgroup(n: number): number {
   return Math.ceil(n / W) * W;
 }
 
-/** Kernels of the counting sort, in dispatch order. */
-export interface CountSortKernels {
-  /** Dispatched over `nCellsPadded` after the histogram kernel. */
-  readonly blockScan: ComputeNode;
-  /** Dispatched as a single W-thread workgroup. Reads/writes `blockSums`. */
-  readonly blockSumScan: ComputeNode;
-  /**
-   * Adds each block's prefix into `cellStart`, sets
-   * `cellEnd = cellStart + counts`, and zeroes `counts` for the next rebuild.
-   */
-  readonly finalizeCellRanges: ComputeNode;
-  /**
-   * Dispatched over `capacity`. Places each particle at its bucket's start
-   * plus its rank, filling `sortedIndices`, its inverse `slotOf`, and the
-   * positions in sorted order.
-   */
-  readonly scatter: ComputeNode;
-}
-
-export function buildCountSortKernels(
-  counts: StorageBufferNode<'uint'>,
-  cellStart: StorageBufferNode<'uint'>,
-  cellEnd: StorageBufferNode<'uint'>,
+/**
+ * Exclusive prefix sum over `nPadded` entries (a multiple of
+ * `SCAN_WORKGROUP_SIZE`, at most its square), in two dispatches:
+ *
+ * 1. `blockScan` scans each W-entry block, reading entry `gi` through
+ *    `load(gi)` and writing its in-block prefix through `store(gi, value)`;
+ *    each block's total goes to `blockSums`.
+ * 2. `blockSumScan` scans `blockSums` in one workgroup, so afterwards the full
+ *    prefix of entry `gi` is `stored + blockSums[gi / W]`.
+ *
+ * `blockSums` must hold W entries, zero past the last block. `name` prefixes
+ * the kernels' names in GPU profiles.
+ */
+export function buildBlockScanKernels(
+  load: (gi: Any) => Any,
+  store: (gi: Any, value: Any) => void,
   blockSums: StorageBufferNode<'uint'>,
-  cellIndex: StorageBufferNode<'uint'>,
-  rank: StorageBufferNode<'uint'>,
-  sortedIndices: StorageBufferNode<'uint'>,
-  slotOf: StorageBufferNode<'uint'>,
-  positions: StorageBufferNode<'vec4'>,
-  sortedPositions: StorageBufferNode<'vec4'>,
-  capacity: number,
-  nCellsPadded: number,
-): CountSortKernels {
+  nPadded: number,
+  name: string,
+): { readonly blockScan: ComputeNode; readonly blockSumScan: ComputeNode } {
   const W = SCAN_WORKGROUP_SIZE;
+  if (nPadded % W !== 0 || nPadded > MAX_CELLS_SINGLE_LEVEL_SCAN) {
+    throw new Error(
+      `buildBlockScanKernels: nPadded must be a multiple of ${W} and at most ` +
+        `${MAX_CELLS_SINGLE_LEVEL_SCAN}, got ${nPadded}`,
+    );
+  }
 
-  // Pass 1 — per-block Blelloch exclusive scan of `counts` into `cellStart`;
+  // Pass 1 — per-block Blelloch exclusive scan of `load` into `store`;
   // writes each block's total to `blockSums` before the down-sweep clears it.
   // Each JS loop iteration snapshots `offset` into `off` before the `If()`
   // callback captures it.
@@ -81,10 +74,7 @@ export function buildCountSortKernels(
     const gi: Any = globalId.x;
 
     const s: Any = workgroupArray('uint', W);
-    // `counts` is atomic — a plain `.element(gi)` read would generate
-    // invalid WGSL in the shader backend. `atomicLoad` returns the current
-    // value as a plain u32.
-    s.element(tid).assign(atomicLoad(counts.element(gi)));
+    s.element(tid).assign(load(gi));
     workgroupBarrier();
 
     let offset = 1;
@@ -118,10 +108,10 @@ export function buildCountSortKernels(
       workgroupBarrier();
     }
 
-    cellStart.element(gi).assign(s.element(tid));
+    store(gi, s.element(tid));
   })()
-    .compute(nCellsPadded, [W])
-    .setName('sort.blockScan');
+    .compute(nPadded, [W])
+    .setName(`${name}.blockScan`);
 
   // Pass 2 — single-workgroup Blelloch scan over `blockSums`. `blockSums`
   // is always sized W entries (unused trailing entries are zero from their
@@ -167,7 +157,57 @@ export function buildCountSortKernels(
     blockSums.element(tid).assign(s.element(tid));
   })()
     .compute(W, [W])
-    .setName('sort.blockSumScan');
+    .setName(`${name}.blockSumScan`);
+
+  return { blockScan, blockSumScan };
+}
+
+/** Kernels of the counting sort, in dispatch order. */
+export interface CountSortKernels {
+  /** Dispatched over `nCellsPadded` after the histogram kernel. */
+  readonly blockScan: ComputeNode;
+  /** Dispatched as a single W-thread workgroup. Reads/writes `blockSums`. */
+  readonly blockSumScan: ComputeNode;
+  /**
+   * Adds each block's prefix into `cellStart`, sets
+   * `cellEnd = cellStart + counts`, and zeroes `counts` for the next rebuild.
+   */
+  readonly finalizeCellRanges: ComputeNode;
+  /**
+   * Dispatched over `capacity`. Places each particle at its bucket's start
+   * plus its rank, filling `sortedIndices`, its inverse `slotOf`, and the
+   * positions in sorted order.
+   */
+  readonly scatter: ComputeNode;
+}
+
+export function buildCountSortKernels(
+  counts: StorageBufferNode<'uint'>,
+  cellStart: StorageBufferNode<'uint'>,
+  cellEnd: StorageBufferNode<'uint'>,
+  blockSums: StorageBufferNode<'uint'>,
+  cellIndex: StorageBufferNode<'uint'>,
+  rank: StorageBufferNode<'uint'>,
+  sortedIndices: StorageBufferNode<'uint'>,
+  slotOf: StorageBufferNode<'uint'>,
+  positions: StorageBufferNode<'vec4'>,
+  sortedPositions: StorageBufferNode<'vec4'>,
+  capacity: number,
+  nCellsPadded: number,
+): CountSortKernels {
+  const W = SCAN_WORKGROUP_SIZE;
+
+  // Passes 1 and 2 — exclusive scan of the bucket counts into `cellStart`.
+  // `counts` is atomic — a plain `.element(gi)` read would generate invalid
+  // WGSL in the shader backend. `atomicLoad` returns the current value as a
+  // plain u32.
+  const { blockScan, blockSumScan } = buildBlockScanKernels(
+    (gi) => atomicLoad(counts.element(gi)),
+    (gi, value) => cellStart.element(gi).assign(value),
+    blockSums,
+    nCellsPadded,
+    'sort',
+  );
 
   // Pass 3 — per bucket: add the block prefix to cellStart, set
   // cellEnd = cellStart + counts, and clear counts for the next rebuild's

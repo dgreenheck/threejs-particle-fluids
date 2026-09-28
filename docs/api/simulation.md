@@ -82,14 +82,14 @@ Each 1/60 s step is split into smaller substeps. More substeps stop fast or thin
 
 ### Properties
 
-| Property         | Type                                         | Access     | Description                                                                                     |
-| ---------------- | -------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------- |
-| `gravity`        | `Vector3`                                    | read       | Gravity, m/s². Change it in place, for example `sim.gravity.set(0, -3, 0)`.                     |
-| `particleRadius` | `number`                                     | read       | Radius of every particle, m. When you use `particles`, it's `0` until the simulation starts.    |
-| `particleCount`  | `number`                                     | read       | Particles in use. `0` until the simulation starts.                                              |
-| `showParticles`  | `boolean`                                    | read/write | Draws the particles instead of the surfaces, for debugging. Default `false`.                    |
-| `particleSystem` | [`ParticleSystem`](./core.md#particlesystem) | read       | The particle storage underneath. Available after `start()`.                                     |
-| `loop`           | [`SimLoop`](./core.md#simloop)               | read       | The solver underneath. Available after `start()`. You can change `loop.substeps` while running. |
+| Property         | Type                                         | Access     | Description                                                                                                                                                                        |
+| ---------------- | -------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gravity`        | `Vector3`                                    | read       | Gravity, m/s². Change it in place, for example `sim.gravity.set(0, -3, 0)`.                                                                                                        |
+| `particleRadius` | `number`                                     | read       | Radius of every particle, m. When you use `particles`, it's `0` until the simulation starts.                                                                                       |
+| `particleCount`  | `number`                                     | read       | Particles in use. `0` until the simulation starts.                                                                                                                                 |
+| `showParticles`  | `boolean`                                    | read/write | Draws the particles instead of the surfaces, for debugging. Default `false`.                                                                                                       |
+| `particleSystem` | [`ParticleSystem`](./core.md#particlesystem) | read       | The particle storage underneath. Available after `start()`. Liquid and air particles are re-sorted every step (see [Sorting](./fluid-system.md#sorting)), so their indices change. |
+| `loop`           | [`SimLoop`](./core.md#simloop)               | read       | The solver underneath. Available after `start()`. You can change `loop.substeps` while running.                                                                                    |
 
 ### Methods
 

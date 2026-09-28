@@ -61,6 +61,8 @@ export class AirHeat {
   ) {
     this.temperature = instancedArray(fluid.range.count, 'float');
     this.buffers.push(this.temperature);
+    // Temperature belongs to its air particle, so it moves with it when the air is sorted.
+    fluid.addParticleData({ buffer: this.temperature, type: 'float', local: true });
     this.buoyancy = uniform(buoyancy, 'float');
     this.cooling = uniform(cooling, 'float');
   }

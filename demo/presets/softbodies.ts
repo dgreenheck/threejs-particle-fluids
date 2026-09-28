@@ -242,6 +242,7 @@ export async function buildBlender(ctx: BuildContext, values: Values): Promise<E
     range: { start: 0, count: waterCount },
     viscosity: values['viscosity']!,
     surfaceTension: 0.05,
+    sortByCell: true,
   });
   for (let i = 0; i < bodies.length; i++) fluid.addBoundary(softbody.surfaceRange(i));
 

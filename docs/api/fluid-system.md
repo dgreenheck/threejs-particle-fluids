@@ -8,7 +8,7 @@ These are the low-level liquid classes. `FluidSystem` is the Position Based Flui
 import { FluidSystem, ViscositySolver, FluidSurfaceRenderer } from 'threejs-particle-fluids';
 ```
 
-**Contents:** [FluidSystem](#fluidsystem-1) · [ViscositySolver](#viscositysolver) · [FluidSurfaceRenderer](#fluidsurfacerenderer) · [FluidAppearance](#fluidappearance) · [Emitting](#emitting) · [Limitations](#limitations)
+**Contents:** [FluidSystem](#fluidsystem-1) · [ViscositySolver](#viscositysolver) · [FluidSurfaceRenderer](#fluidsurfacerenderer) · [FluidAppearance](#fluidappearance) · [Emitting](#emitting) · [Sorting](#sorting) · [Limitations](#limitations)
 
 ## FluidSystem
 
@@ -37,26 +37,28 @@ The constructor sets the inverse mass of every particle in `range` to `1 / mass`
 
 #### FluidSystemOptions
 
-| Option            | Type                                       | Default                                   | Description                                                                                                          |
-| ----------------- | ------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `range`           | [`ParticleRange`](./core.md#particlerange) | `{ start: 0, count: particles.capacity }` | Particles that make up the fluid.                                                                                    |
-| `restDensity`     | `number`                                   | `1000`                                    | Rest density, kg/m³.                                                                                                 |
-| `particleSpacing` | `number`                                   | `2 × particles.particleRadius`            | Distance between particles at rest, m. Sets `mass`.                                                                  |
-| `smoothingRadius` | `number`                                   | `2 × particleSpacing`                     | Distance within which particles affect each other, m.                                                                |
-| `compliance`      | `number`                                   | `1e-4`                                    | How much the fluid can compress. `0` is incompressible. Fixed after construction.                                    |
-| `viscosity`       | `number`                                   | off                                       | How strongly each particle's velocity is blended with its neighbors' (XSPH viscosity).                               |
-| `vorticity`       | `number`                                   | off                                       | Strength of vorticity confinement, which restores swirls the solver damps out.                                       |
-| `surfaceTension`  | `number`                                   | off                                       | Pulls the fluid into drops and smooth sheets. Acts between fluid particles only.                                     |
-| `adhesion`        | `number`                                   | off                                       | Attraction toward boundary particles (see [`addBoundary`](#addboundaryrange-options)). No effect without boundaries. |
+| Option            | Type                                       | Default                                   | Description                                                                                                                                                                                                             |
+| ----------------- | ------------------------------------------ | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `range`           | [`ParticleRange`](./core.md#particlerange) | `{ start: 0, count: particles.capacity }` | Particles that make up the fluid.                                                                                                                                                                                       |
+| `restDensity`     | `number`                                   | `1000`                                    | Rest density, kg/m³.                                                                                                                                                                                                    |
+| `particleSpacing` | `number`                                   | `2 × particles.particleRadius`            | Distance between particles at rest, m. Sets `mass`.                                                                                                                                                                     |
+| `smoothingRadius` | `number`                                   | `2 × particleSpacing`                     | Distance within which particles affect each other, m.                                                                                                                                                                   |
+| `compliance`      | `number`                                   | `1e-4`                                    | How much the fluid can compress. `0` is incompressible. Fixed after construction.                                                                                                                                       |
+| `viscosity`       | `number`                                   | off                                       | How strongly each particle's velocity is blended with its neighbors' (XSPH viscosity).                                                                                                                                  |
+| `vorticity`       | `number`                                   | off                                       | Strength of vorticity confinement, which restores swirls the solver damps out.                                                                                                                                          |
+| `surfaceTension`  | `number`                                   | off                                       | Pulls the fluid into drops and smooth sheets. Acts between fluid particles only.                                                                                                                                        |
+| `adhesion`        | `number`                                   | off                                       | Attraction toward boundary particles (see [`addBoundary`](#addboundaryrange-options)). No effect without boundaries.                                                                                                    |
+| `sortByCell`      | `boolean`                                  | `false`                                   | Re-sort the fluid's particles into neighbor-grid order at the start of every step, which keeps the solver fast once the fluid has mixed. Particle indices within `range` change between steps. See [Sorting](#sorting). |
 
 #### Errors
 
-| Throws                                      | When                                                                                                        |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `FluidSystem: invalid particle range`       | `range` has a negative or non-integer value, is empty, or runs past `particles.capacity`.                   |
-| `FluidSystem: restDensity must be positive` | `restDensity` is zero, negative, or not finite. `particleSpacing` and `smoothingRadius` throw the same way. |
-| `FluidSystem: compliance must be ≥ 0`       | `compliance` is negative or `NaN`.                                                                          |
-| `FluidSystem: <option> must be finite`      | `viscosity`, `vorticity`, `surfaceTension`, or `adhesion` is `NaN` or infinite.                             |
+| Throws                                                       | When                                                                                                                      |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `FluidSystem: invalid particle range`                        | `range` has a negative or non-integer value, is empty, or runs past `particles.capacity`.                                 |
+| `FluidSystem: restDensity must be positive`                  | `restDensity` is zero, negative, or not finite. `particleSpacing` and `smoothingRadius` throw the same way.               |
+| `FluidSystem: compliance must be ≥ 0`                        | `compliance` is negative or `NaN`.                                                                                        |
+| `FluidSystem: <option> must be finite`                       | `viscosity`, `vorticity`, `surfaceTension`, or `adhesion` is `NaN` or infinite.                                           |
+| `FluidSystem: sortByCell supports at most 1048576 particles` | `sortByCell` is on and the particle system holds more than 1,048,576 particles. Thrown when a `SimLoop` builds the fluid. |
 
 ### Properties
 
@@ -328,7 +330,20 @@ Controls how the liquid looks. Pass it as `options.appearance` or to `setAppeara
 2. For each particle `i` you release, write the nozzle position to `particles.positions[i]` and `particles.predictedPositions[i]`, and set `particles.velocities[i]`. Then set `particles.invMass[i]` to `1 / fluid.mass` and `fluid.density[i]` to `fluid.restDensity`.
 3. Release the next batch only once the stream has moved one `particleSpacing`, so new particles don't overlap.
 
-[`demo/presets/honey.ts`](../../demo/presets/honey.ts) does this.
+[`demo/presets/honey.ts`](../../demo/presets/honey.ts) does this. Leave [`sortByCell`](#sorting) off for a fluid you emit this way, because sorting moves parked and released particles between slots.
+
+## Sorting
+
+The solver runs its fluid kernels in the neighbor grid's order, so each workgroup handles particles that are close together. The particles' data, though, stays where it was uploaded, and every kernel reads each neighbor's position, mass, and density by particle index. Once the fluid has mixed, those reads land all over the buffers. Sorting keeps them close together. On an Apple M1 Pro at the demo's Ultra level, the liquid presets simulate 13–28% faster with `sortByCell`, and a shuffled 100,000-particle column takes 12.2 ms per step instead of 15.1 ms.
+
+With `sortByCell: true`, the fluid puts its particles back into the neighbor grid's cell order at the start of every step. The order comes from the grid's last rebuild, so the first step runs unsorted. Everything stored per particle moves with it: every buffer in the `ParticleSystem`, the fluid's `density`, and a `GasSystem`'s air temperature. Nothing outside `range` changes. [`Simulation`](./simulation.md) turns it on for every fluid.
+
+Because a particle's index within `range` changes from step to step:
+
+- Leave it off if you read or write particular fluid particles by index across steps, such as an emitter that releases particles by slot (see [Emitting](#emitting)), or code that follows one particle through `readback()`.
+- Per-particle buffers you keep yourself for fluid particles aren't moved.
+
+Each step, the sort runs a prefix sum over every particle in the system, then two passes over the fluid for each per-particle buffer: ten for a liquid, eleven for air with a `GasSystem`.
 
 ## Limitations
 

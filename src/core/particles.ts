@@ -232,6 +232,28 @@ export class ParticleSystem {
   }
 
   /**
+   * @internal Every per-particle buffer, indexed by particle, with its element
+   * type. Code that moves particles between slots must move all of these.
+   */
+  get perParticleBuffers(): readonly (
+    | { readonly buffer: StorageBufferNode<'vec4'>; readonly type: 'vec4' }
+    | { readonly buffer: StorageBufferNode<'float'>; readonly type: 'float' }
+    | { readonly buffer: StorageBufferNode<'uint'>; readonly type: 'uint' }
+  )[] {
+    return [
+      { buffer: this.positions, type: 'vec4' },
+      { buffer: this.predictedPositions, type: 'vec4' },
+      { buffer: this.velocities, type: 'vec4' },
+      { buffer: this.invMass, type: 'float' },
+      { buffer: this.collisionGroup, type: 'uint' },
+      { buffer: this.boundaryVolume, type: 'float' },
+      { buffer: this.rotation, type: 'vec4' },
+      { buffer: this.predictedRotation, type: 'vec4' },
+      { buffer: this.angularVelocity, type: 'vec4' },
+    ];
+  }
+
+  /**
    * Free the particle buffers on the GPU. Later uploads and readbacks throw.
    * Dispose every loop, material, collider, and mesh that reads these
    * buffers first; they can't run afterwards.

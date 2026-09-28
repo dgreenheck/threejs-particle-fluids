@@ -16,6 +16,7 @@ import {
 } from '../core/index.js';
 import { buildAdhesionKernel } from './sim/adhesion.js';
 import { buildBoundaryVolumeKernel } from './sim/boundaryVolume.js';
+import { buildCellSortKernels, type ParticleData } from './sim/cellSort.js';
 import { buildColorFieldNormalKernel, buildSurfaceTensionKernel } from './sim/cohesion.js';
 import { buildLambdaKernel } from './sim/lambda.js';
 import { buildApplyDeltaKernel, buildPositionDeltaKernel } from './sim/positionDelta.js';
@@ -51,6 +52,19 @@ export interface FluidSystemOptions {
   readonly surfaceTension?: number;
   /** Attraction toward boundary particles, which makes the fluid wet and cling to solids. */
   readonly adhesion?: number;
+  /**
+   * Re-sort the fluid's particles into neighbor-grid cell order at the start
+   * of every step, so particles that are close in space are close in memory.
+   * Kernels read each neighbor's data by particle index; once a liquid has
+   * mixed, unsorted particles scatter those reads across the buffers.
+   * Default off.
+   *
+   * A particle's index within `range` changes from step to step, and each
+   * particle's state (position, velocity, density, …) moves with it. Leave
+   * this off when anything reads or writes particular fluid particles by
+   * index across steps, such as an emitter that releases particles by slot.
+   */
+  readonly sortByCell?: boolean;
 }
 
 /**
@@ -85,6 +99,13 @@ export class FluidSystem implements Material {
     Record<'viscosity' | 'vorticity' | 'surfaceTension' | 'adhesion', UniformNode<'float', number>>
   > = {};
   private readonly boundaries: { range: ParticleRange; dynamic: boolean }[] = [];
+  private readonly particleData: ParticleData[] = [];
+  /** 1 once the neighbor grid has been built, so the cell order is valid. */
+  private readonly sortReady = uniform(0, 'uint' as 'float') as unknown as UniformNode<
+    'uint',
+    number
+  >;
+  private stepsStarted = 0;
   private context: FluidKernelContext | undefined;
 
   constructor(particles: ParticleSystem, options: FluidSystemOptions = {}) {
@@ -180,6 +201,25 @@ export class FluidSystem implements Material {
       throw new Error('FluidSystem.addBoundary: boundaries cannot overlap each other');
     }
     this.boundaries.push({ range, dynamic: options.dynamic ?? true });
+  }
+
+  /**
+   * @internal Register a per-particle buffer that belongs to this fluid's
+   * particles, so {@link FluidSystemOptions.sortByCell} moves it with them.
+   * `local` buffers are indexed from 0 at `range.start`. Call before
+   * creating the {@link SimLoop}.
+   */
+  addParticleData(data: ParticleData): void {
+    if (this.context) {
+      throw new Error('FluidSystem.addParticleData: register data before creating the SimLoop');
+    }
+    this.particleData.push(data);
+  }
+
+  /** @internal Called by {@link SimLoop.step}. */
+  update(): void {
+    // The first step builds the grid; from the second on its cell order is valid.
+    if (this.stepsStarted++ === 1) this.sortReady.value = 1;
   }
 
   /**
@@ -300,7 +340,24 @@ export class FluidSystem implements Material {
       postSolve.push(buildVelocityApplyKernel(context, passes));
     }
 
-    return { init, preSolve, solve, postSolve, noSelfContacts: range };
+    const beforeStep: ComputeNode[] = [];
+    if (this.options.sortByCell) {
+      beforeStep.push(
+        ...buildCellSortKernels({
+          particles,
+          grid: hashGrid,
+          range,
+          data: [
+            ...particles.perParticleBuffers,
+            { buffer: this.density, type: 'float' },
+            ...this.particleData,
+          ],
+          enabled: this.sortReady,
+        }).kernels,
+      );
+    }
+
+    return { init, beforeStep, preSolve, solve, postSolve, noSelfContacts: range };
   }
 
   private uniform(

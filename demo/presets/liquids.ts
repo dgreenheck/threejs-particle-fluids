@@ -168,6 +168,7 @@ export async function buildFluid(
     surfaceTension: values['tension']!,
     // The marble's own spin is its only motion; confinement would keep adding to it.
     ...(kind === 'marble' ? {} : { vorticity: 0.025 }),
+    sortByCell: true,
   });
   const wave = kind === 'wave' ? waveTank(particles, halfX, halfZ) : undefined;
   const colliders = wave?.colliders ?? tank(particles, halfX, halfZ);

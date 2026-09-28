@@ -86,6 +86,7 @@ export async function buildBuoyancy(ctx: BuildContext, values: Values): Promise<
     range: { start: 0, count: waterCount },
     viscosity: values['viscosity']!,
     surfaceTension: values['tension']!,
+    sortByCell: true,
   });
   for (let i = 0; i < bodies.length; i++) water.addBoundary(ducks.surfaceRange(i));
   const walls = tank(particles, 0.8, 0.55);

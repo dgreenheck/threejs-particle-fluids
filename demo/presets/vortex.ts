@@ -31,7 +31,11 @@ export function buildVortex(ctx: BuildContext, values: Values): Experiment {
   const detailed = ctx.particles >= 25000;
   const particles = new ParticleSystem(ctx.renderer, count, radius);
   particles.uploadParticles(initial);
-  const air = new FluidSystem(particles, { viscosity: 0.02, vorticity: 0.06 });
+  const air = new FluidSystem(particles, {
+    viscosity: 0.02,
+    vorticity: 0.06,
+    sortByCell: true,
+  });
   const smoke = new GasSystem(air, {
     capacity: detailed ? 42000 : 30000,
     lifetime: 6,

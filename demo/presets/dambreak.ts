@@ -27,6 +27,7 @@ export async function buildDamBreak(ctx: BuildContext, values: Values): Promise<
     viscosity: values['viscosity']!,
     surfaceTension: values['tension']!,
     vorticity: 0.02,
+    sortByCell: true,
   });
 
   const walls = tank(particles, HALF_X, HALF_Z);

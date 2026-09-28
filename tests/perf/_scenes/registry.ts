@@ -8,7 +8,12 @@ import { particleCount, type ParticleLevel } from '../../../demo/types.js';
 import type { ParticleSystem } from '../../../src/index.js';
 import type { PerfRenderer } from '../_helpers/PerfRenderer.js';
 import type { BuiltScene } from './_helpers.js';
-import { buildFluid10kScene, buildFluid100kScene, buildFluid100kShuffledScene } from './fluid.js';
+import {
+  buildFluid10kScene,
+  buildFluid100kScene,
+  buildFluid100kShuffledScene,
+  buildFluid100kShuffledSortedScene,
+} from './fluid.js';
 import { buildFluidBodies10kScene, buildFluidBodies100kScene } from './fluid-bodies.js';
 import {
   buildFluidSurfaceTension10kScene,
@@ -95,6 +100,7 @@ export const SCENES: Record<string, SceneFactory> = {
   'fluid-10k': fromBenchmark(buildFluid10kScene),
   'fluid-100k': fromBenchmark(buildFluid100kScene),
   'fluid-100k-shuffled': fromBenchmark(buildFluid100kShuffledScene),
+  'fluid-100k-shuffled-sorted': fromBenchmark(buildFluid100kShuffledSortedScene),
   'fluid-bodies-10k': fromBenchmark(buildFluidBodies10kScene),
   'fluid-bodies-100k': fromBenchmark(buildFluidBodies100kScene),
   'fluid-surface-tension-10k': fromBenchmark(buildFluidSurfaceTension10kScene),
